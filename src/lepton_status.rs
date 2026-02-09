@@ -1,51 +1,51 @@
 #[derive(Debug)]
 pub enum LepStatus {
-      OK,
-      CommOK,
-      Error,
-      NotReady,
-      RangeError,
-      ChecksumError,
-      BadArgPointerError,
-      DataSizeError,
-      UndefinedFunctionError,
-      FunctionNotSupported,
-      DataOutOfRangeError,
-      CommandNotAllowed,
+    OK,
+    CommOK,
+    Error,
+    NotReady,
+    RangeError,
+    ChecksumError,
+    BadArgPointerError,
+    DataSizeError,
+    UndefinedFunctionError,
+    FunctionNotSupported,
+    DataOutOfRangeError,
+    CommandNotAllowed,
 
-      //OTP access errors
-      OTPWriteError,
-      OTPReadError,
-      OTPNotProgrammedError,
+    //OTP access errors
+    OTPWriteError,
+    OTPReadError,
+    OTPNotProgrammedError,
 
-      //I2C Errors
-      I2CBusNotReady,
-      I2CBufferOverflow,
-      I2CArbitrationLost,
-      I2CBusError,
-      I2CNackReceived,
-      I2CFail,
+    //I2C Errors
+    I2CBusNotReady,
+    I2CBufferOverflow,
+    I2CArbitrationLost,
+    I2CBusError,
+    I2CNackReceived,
+    I2CFail,
 
-      //Processing errors
-      DivZeroError,
+    //Processing errors
+    DivZeroError,
 
-      //Comm errors
-      CommPortNotOpen,
-      CommInvalidPortError,
-      CommRangeError,
-      ErrorCreatingComm,
-      ErrorStartingComm,
-      ErrorClosingComm,
-      CommChecksumError,
-      CommNoDev,
-      TimeoutError,
-      CommErrorWritingComm,
-      CommErrorReadingComm,
-      CommCountError,
+    //Comm errors
+    CommPortNotOpen,
+    CommInvalidPortError,
+    CommRangeError,
+    ErrorCreatingComm,
+    ErrorStartingComm,
+    ErrorClosingComm,
+    CommChecksumError,
+    CommNoDev,
+    TimeoutError,
+    CommErrorWritingComm,
+    CommErrorReadingComm,
+    CommCountError,
 
-      //Other
-      OperationCanceled,
-      UndefinedErrorCode
+    //Other
+    OperationCanceled,
+    UndefinedErrorCode,
 }
 
 impl From<i8> for LepStatus {
@@ -149,12 +149,12 @@ impl core::fmt::Display for LepStatus {
             LepStatus::FunctionNotSupported => write!(f, "Function Not Supported"),
             LepStatus::DataOutOfRangeError => write!(f, "Data Out of Range"),
             LepStatus::CommandNotAllowed => write!(f, "Command Not Allowed"),
-      
+
             //OTP access errors
             LepStatus::OTPWriteError => write!(f, "OTP Write Error"),
             LepStatus::OTPReadError => write!(f, "OTP Read Error"),
             LepStatus::OTPNotProgrammedError => write!(f, "OTP Not Programmed Error"),
-      
+
             //I2C Errors
             LepStatus::I2CBusNotReady => write!(f, "I2C Bus Not Ready"),
             LepStatus::I2CBufferOverflow => write!(f, "I2C Buffer Overflow"),
@@ -162,10 +162,10 @@ impl core::fmt::Display for LepStatus {
             LepStatus::I2CBusError => write!(f, "I2C Bus Error"),
             LepStatus::I2CNackReceived => write!(f, "I2C Nack Received"),
             LepStatus::I2CFail => write!(f, "I2C Fail"),
-      
+
             //Processing errors
             LepStatus::DivZeroError => write!(f, "Div Zero Error"),
-      
+
             //Comm errors
             LepStatus::CommPortNotOpen => write!(f, "Comm Port Not Open"),
             LepStatus::CommInvalidPortError => write!(f, "Comm Invalid Port Error"),
@@ -179,10 +179,10 @@ impl core::fmt::Display for LepStatus {
             LepStatus::CommErrorWritingComm => write!(f, "Comm Error Writing Comm"),
             LepStatus::CommErrorReadingComm => write!(f, "Comm Error Reading Comm"),
             LepStatus::CommCountError => write!(f, "Comm Count Error Reading Comm"),
-      
+
             //Other
-            LepStatus::OperationCanceled  => write!(f, "Operation Canceled"),
-            LepStatus::UndefinedErrorCode  => write!(f, "Undefined Error Code"),
+            LepStatus::OperationCanceled => write!(f, "Operation Canceled"),
+            LepStatus::UndefinedErrorCode => write!(f, "Undefined Error Code"),
         }
     }
 }

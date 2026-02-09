@@ -1,6 +1,6 @@
 use crate::lepton_command::LepCommand;
-use embedded_hal::i2c::I2c;
 use crate::lepton_status::LepStatus;
+use embedded_hal::i2c::I2c;
 
 macro_rules! generate_get_set_functions {
     (
@@ -20,37 +20,37 @@ macro_rules! generate_get_set_functions {
             self.poll_status()?;
             let data = self.read_register(Register::CCIDataReg0)?;
             let status_code = self.get_status_code()?;
-            Ok((data.try_into().unwrap(), status_code))
+            Ok((data as $param_ty, status_code))
         }
     };
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct LEPTONCCI <I2C, D> {
+pub struct LEPTONCCI<I2C, D> {
     i2c: I2C,
     delay: D,
     address: u8,
 }
 
 impl<I2C, D, E> LEPTONCCI<I2C, D>
-where 
-    I2C: I2c<Error = E>, E: core::fmt::Debug,
+where
+    I2C: I2c<Error = E>,
+    E: core::fmt::Debug,
     D: embedded_hal::delay::DelayNs,
-    {
-
-
+{
     pub fn new(i2c: I2C, delay: D) -> Result<Self, E> {
-
-        Ok(LEPTONCCI {i2c, delay, address:0x2a})
+        Ok(LEPTONCCI {
+            i2c,
+            delay,
+            address: 0x2a,
+        })
     }
-
 
     pub fn get_boot_status(&mut self) -> Result<bool, E> {
         let response = self.read_register(Register::CCIStatus)?;
-        //camera has booted if bit 2 is 1
+        // camera has booted if bit 1 is 1
         Ok(response & (0b0000_00010) != 0)
     }
-
 
     pub fn get_interface_status(&mut self) -> Result<bool, E> {
         let response = self.read_register(Register::CCIStatus)?;
@@ -66,7 +66,9 @@ where
     //AGC
 
     generate_get_set_functions!(
-        set_agc_enable, get_agc_enable, u16,
+        set_agc_enable,
+        get_agc_enable,
+        u16,
         LepCommand::set_agc_enable(),
         LepCommand::get_agc_enable()
     );
@@ -74,7 +76,9 @@ where
     //SYS
 
     generate_get_set_functions!(
-        set_telemetry_mode, get_telemetry_mode, u16,
+        set_telemetry_mode,
+        get_telemetry_mode,
+        u16,
         LepCommand::set_sys_telemetry_mode(),
         LepCommand::get_sys_telemetry_mode()
     );
@@ -82,39 +86,46 @@ where
     //OEM
 
     generate_get_set_functions!(
-        set_oem_video_output_format, get_oem_video_output_format, u16,
+        set_oem_video_output_format,
+        get_oem_video_output_format,
+        u16,
         LepCommand::set_oem_video_output_format(),
         LepCommand::get_oem_video_output_format()
     );
 
     generate_get_set_functions!(
-        set_oem_video_output_source, get_oem_video_output_source, u16, 
-        LepCommand::set_oem_video_output_source(), 
+        set_oem_video_output_source,
+        get_oem_video_output_source,
+        u16,
+        LepCommand::set_oem_video_output_source(),
         LepCommand::get_oem_video_output_source()
     );
 
     generate_get_set_functions!(
-        set_oem_video_output_constant, get_oem_video_output_constant, u16,
+        set_oem_video_output_constant,
+        get_oem_video_output_constant,
+        u16,
         LepCommand::set_oem_video_output_source_constant(),
         LepCommand::get_oem_video_output_source_constant()
     );
-    
+
     generate_get_set_functions!(
-       set_gpio_mode, get_gpio_mode, u16, 
-        LepCommand::set_oem_gpio_mode(), 
+        set_gpio_mode,
+        get_gpio_mode,
+        u16,
+        LepCommand::set_oem_gpio_mode(),
         LepCommand::get_oem_gpio_mode()
     );
 
     generate_get_set_functions!(
-        set_phase_delay, get_phase_delay, i16, 
-         LepCommand::set_oem_phase_delay(), 
-         LepCommand::get_oem_phase_delay()
-     );
+        set_phase_delay,
+        get_phase_delay,
+        i16,
+        LepCommand::set_oem_phase_delay(),
+        LepCommand::get_oem_phase_delay()
+    );
 
     //RAD
-    
-
-
 
     /// Writes into a register
     #[allow(unused)]
@@ -125,8 +136,7 @@ where
         write_vec.extend_from_slice(&address);
         write_vec.extend_from_slice(payload);
         // i2c write
-        self.i2c
-        .write(self.address as u8, &write_vec)
+        self.i2c.write(self.address as u8, &write_vec)
     }
 
     //Write a command
@@ -142,20 +152,33 @@ where
         // Buffer for values
         let mut data: [u8; 2] = [0; 2];
         // i2c write_read
-        self.i2c
-        .write_read(self.address as u8, &register.address().to_be_bytes(), &mut data)?;
+        self.i2c.write_read(
+            self.address as u8,
+            &register.address().to_be_bytes(),
+            &mut data,
+        )?;
         Ok(u16::from_be_bytes(data))
     }
 
     fn poll_status(&mut self) -> Result<(), E> {
+        let mut timeout = 1000; // loops
         loop {
             let command_finished = self.get_interface_status()?;
-            if command_finished {break} else {self.delay.delay_ms(1);}
+            if command_finished {
+                break;
+            } else {
+                timeout -= 1;
+                self.delay.delay_ms(1);
+                if timeout <= 0 {
+                    return Err(
+                        panic!("Timeout waiting for command to finish")
+                    );
+                }
+            }
         }
         Ok(())
     }
 }
-
 
 #[derive(Clone, Copy)]
 pub enum Register {
@@ -163,7 +186,7 @@ pub enum Register {
     CCIStatus = 0x0002,
     CCICommandID = 0x0004,
     CCIDataLength = 0x0006,
-    CCIDataReg0 = 0x0008
+    CCIDataReg0 = 0x0008,
 }
 
 impl Register {
