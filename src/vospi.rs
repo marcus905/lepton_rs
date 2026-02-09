@@ -1,6 +1,9 @@
 use crate::crc::lepton_packet_crc16_spec;
 
 const PACKET_HEADER_BYTES: usize = 4;
+const DEFAULT_PACKET_SIZE_BYTES: usize = 164;
+const DEFAULT_LINES_PER_SEGMENT: usize = 60;
+const DEFAULT_SEGMENTS_PER_FRAME: usize = 4;
 const PACKET_DISCARD_MASK: u16 = 0xF000;
 const PACKET_NUMBER_MASK: u16 = 0x0FFF;
 const SEGMENT_BITS_MASK: u16 = 0x7;
@@ -31,9 +34,9 @@ impl Default for RobustCaptureConfig {
             enable_crc: true,
             max_resync_attempts: 20,
             max_frame_retries: 4,
-            packet_size_bytes: 164,
-            lines_per_segment: 60,
-            segments_per_frame: 4,
+            packet_size_bytes: DEFAULT_PACKET_SIZE_BYTES,
+            lines_per_segment: DEFAULT_LINES_PER_SEGMENT,
+            segments_per_frame: DEFAULT_SEGMENTS_PER_FRAME,
             max_discard_packets: 600,
             timeout_packets: 3000,
             backoff_packet_reads: 2,
@@ -401,6 +404,8 @@ mod tests {
     use super::*;
     use crate::crc::lepton_packet_crc16_spec;
 
+    const DEFAULT_PAYLOAD_BYTES_PER_PACKET: usize = DEFAULT_PACKET_SIZE_BYTES - PACKET_HEADER_BYTES;
+
     #[derive(Default)]
     struct MockPacketSource {
         packets: Vec<Vec<u8>>,
@@ -426,7 +431,7 @@ mod tests {
         payload_seed: u8,
         discard_id: Option<u16>,
     ) -> Vec<u8> {
-        let mut packet = vec![0u8; 164];
+        let mut packet = vec![0u8; DEFAULT_PACKET_SIZE_BYTES];
         if let Some(id) = discard_id {
             packet[0..2].copy_from_slice(&id.to_be_bytes());
         } else {
@@ -438,7 +443,7 @@ mod tests {
             packet[0..2].copy_from_slice(&id.to_be_bytes());
         }
 
-        for (idx, b) in packet[4..].iter_mut().enumerate() {
+        for (idx, b) in packet[PACKET_HEADER_BYTES..].iter_mut().enumerate() {
             *b = payload_seed.wrapping_add(idx as u8);
         }
 
@@ -449,8 +454,8 @@ mod tests {
 
     fn mk_frame() -> Vec<Vec<u8>> {
         let mut packets = Vec::new();
-        for segment in 1..=4 {
-            for packet_number in 0..60u16 {
+        for segment in 1..=(DEFAULT_SEGMENTS_PER_FRAME as u8){
+            for packet_number in 0..(DEFAULT_LINES_PER_SEGMENT as u16) {
                 packets.push(mk_packet(packet_number, segment, (segment * 9) as u8, None));
             }
         }
@@ -587,7 +592,12 @@ mod tests {
         let cfg = RobustCaptureConfig::default();
         assert_eq!(cfg.lines_per_segment, 60);
         assert_eq!(cfg.segments_per_frame, 4);
-        assert_eq!(required_frame_buffer_len(&cfg), 160 * 60 * 4);
+        assert_eq!(
+            required_frame_buffer_len(&cfg),
+            DEFAULT_PAYLOAD_BYTES_PER_PACKET
+                * DEFAULT_LINES_PER_SEGMENT
+                * DEFAULT_SEGMENTS_PER_FRAME
+        );
     }
 
     #[test]

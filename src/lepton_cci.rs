@@ -1,6 +1,7 @@
 use crate::lepton_command::LepCommand;
 use crate::lepton_status::LepStatus;
 use embedded_hal::i2c::I2c;
+use crate::lepton::LeptonError::Timeout;
 
 const CCI_STATUS_INTERFACE_BUSY_BIT: u16 = 1 << 0;
 const CCI_STATUS_BOOTED_BIT: u16 = 1 << 2;
@@ -58,6 +59,7 @@ where
 
     pub fn get_interface_status(&mut self) -> Result<bool, E> {
         let response = self.read_register(Register::CCIStatus)?;
+        // CCI status bit 0 is interface busy (1 = busy, 0 = command finished).
         Ok((response & CCI_STATUS_INTERFACE_BUSY_BIT) == 0)
     }
 
@@ -174,6 +176,7 @@ where
             self.delay.delay_ms(1);
         }
 
+        // FIXME: return a proper error instead of panicking
         panic!("Timeout waiting for command to finish")
     }
 }

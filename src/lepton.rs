@@ -197,6 +197,8 @@ where
     }
 
     /// Allocation-free robust capture into a caller-provided buffer.
+    ///
+    /// `FrameMeta.capture_ticks` is set to `0` in this convenience wrapper.
     pub fn read_frame_robust_into(
         &mut self,
         out: &mut [u8],
@@ -205,6 +207,8 @@ where
     }
 
     /// Allocation-free robust capture into a caller-provided buffer with timestamp/tick source.
+    ///
+    /// Uses the caller-provided monotonic tick source to stamp `FrameMeta.capture_ticks`.
     pub fn read_frame_robust_into_with_ticks<F>(
         &mut self,
         out: &mut [u8],

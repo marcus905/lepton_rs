@@ -153,14 +153,15 @@ impl LepCommand {
 
 #[cfg(test)]
 mod tests {
-    use super::LepCommand;
+    use super::{CommandType, LepCommand};
 
     const COMMAND_TYPE_MASK: u16 = 0x0003;
+    const GET_COMMAND_TYPE: u16 = CommandType::Get as u16;
 
     #[test]
     fn get_agc_policy_uses_get_command_type() {
         let command_type = LepCommand::get_agc_policy().raw_command_id() & COMMAND_TYPE_MASK;
-        assert_eq!(command_type, 0);
+        assert_eq!(command_type, GET_COMMAND_TYPE);
     }
 
     #[test]
@@ -179,7 +180,7 @@ mod tests {
         ];
 
         for command_id in get_command_ids {
-            assert_eq!(command_id & COMMAND_TYPE_MASK, 0);
+            assert_eq!(command_id & COMMAND_TYPE_MASK, GET_COMMAND_TYPE);
         }
     }
 }
