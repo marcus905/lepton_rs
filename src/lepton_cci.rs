@@ -2,6 +2,10 @@ use crate::lepton_command::LepCommand;
 use crate::lepton_status::LepStatus;
 use embedded_hal::i2c::I2c;
 
+const CCI_STATUS_INTERFACE_BUSY_BIT: u16 = 1 << 0;
+const CCI_STATUS_BOOTED_BIT: u16 = 1 << 2;
+const COMMAND_POLL_TIMEOUT_MS: u16 = 1000;
+
 macro_rules! generate_get_set_functions {
     (
         $set_fn_name:ident, $get_fn_name:ident, $param_ty:ty, $set_command:expr, $get_command:expr
@@ -48,13 +52,13 @@ where
 
     pub fn get_boot_status(&mut self) -> Result<bool, E> {
         let response = self.read_register(Register::CCIStatus)?;
-        // camera has booted if bit 1 is 1
-        Ok(response & (0b0000_00010) != 0)
+        // Camera has booted when CCI status bit 2 is set.
+        Ok((response & CCI_STATUS_BOOTED_BIT) != 0)
     }
 
     pub fn get_interface_status(&mut self) -> Result<bool, E> {
         let response = self.read_register(Register::CCIStatus)?;
-        Ok(response & (0b0000_0001) == 0)
+        Ok((response & CCI_STATUS_INTERFACE_BUSY_BIT) == 0)
     }
 
     pub fn get_status_code(&mut self) -> Result<LepStatus, E> {
@@ -161,22 +165,16 @@ where
     }
 
     fn poll_status(&mut self) -> Result<(), E> {
-        let mut timeout = 1000; // loops
-        loop {
+        for _ in 0..COMMAND_POLL_TIMEOUT_MS {
             let command_finished = self.get_interface_status()?;
             if command_finished {
-                break;
-            } else {
-                timeout -= 1;
-                self.delay.delay_ms(1);
-                if timeout <= 0 {
-                    return Err(
-                        panic!("Timeout waiting for command to finish")
-                    );
-                }
+                return Ok(());
             }
+
+            self.delay.delay_ms(1);
         }
-        Ok(())
+
+        panic!("Timeout waiting for command to finish")
     }
 }
 

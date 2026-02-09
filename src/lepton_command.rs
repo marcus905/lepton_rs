@@ -31,6 +31,13 @@ impl std::ops::Add<u16> for Module {
     }
 }
 
+#[cfg(test)]
+impl LepCommand {
+    fn raw_command_id(&self) -> u16 {
+        self.command_id
+    }
+}
+
 pub struct LepCommand {
     command_id: u16,
     data_length: u16,
@@ -142,4 +149,37 @@ impl LepCommand {
         0x28,
         1
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::LepCommand;
+
+    const COMMAND_TYPE_MASK: u16 = 0x0003;
+
+    #[test]
+    fn get_agc_policy_uses_get_command_type() {
+        let command_type = LepCommand::get_agc_policy().raw_command_id() & COMMAND_TYPE_MASK;
+        assert_eq!(command_type, 0);
+    }
+
+    #[test]
+    fn getters_near_agc_policy_use_get_command_type() {
+        let get_command_ids = [
+            LepCommand::get_agc_enable().raw_command_id(),
+            LepCommand::get_agc_policy().raw_command_id(),
+            LepCommand::get_agc_roi().raw_command_id(),
+            LepCommand::get_agc_histogram_statistics().raw_command_id(),
+            LepCommand::get_oem_phase_delay().raw_command_id(),
+            LepCommand::get_oem_gpio_mode().raw_command_id(),
+            LepCommand::get_oem_video_output_source().raw_command_id(),
+            LepCommand::get_oem_video_output_source_constant().raw_command_id(),
+            LepCommand::get_sys_telemetry_mode().raw_command_id(),
+            LepCommand::get_oem_video_output_format().raw_command_id(),
+        ];
+
+        for command_id in get_command_ids {
+            assert_eq!(command_id & COMMAND_TYPE_MASK, 0);
+        }
+    }
 }

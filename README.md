@@ -12,11 +12,18 @@
 - Robust Lepton 3.x/3.5 VoSPI capture path (`read_frame_robust` / `read_frame_robust_into`)
 - Optional packet CRC validation and bounded auto-resync
 - Packet/segment sequencing validation with diagnostics counters
+- Optional capture timestamp/tick injection via `read_frame_robust_into_with_ticks`
 
 ## Lepton 3.5 robust acquisition notes
 
 Lepton 3.x/3.5 sends frames as 4 segments × 60 lines over VoSPI (160x120 total).
 The robust API:
+
+
+`RobustCaptureConfig` currently models telemetry-disabled Lepton 3.x/3.5 packets by default
+(164-byte packets with 4-byte headers and 160-byte payload). If your firmware output
+format differs, adjust `packet_size_bytes`, `lines_per_segment`, and `segments_per_frame`
+accordingly.
 
 - Rejects discard packets
 - Validates line ordering and segment progression
@@ -56,7 +63,8 @@ let meta = robust.meta;
 
 - `read_frame()` returns legacy raw VoSPI packets (60 x 164 bytes).
 - `read_frame_robust()` returns payload-only image bytes for Lepton 3.x/3.5 (4 x 60 x 160).
-- `read_frame_robust_into(&mut [u8])` avoids per-frame allocation and is recommended for embedded capture loops.
+- `read_frame_robust_into(&mut [u8])` avoids per-frame allocation and leaves `capture_ticks` as `0`.
+- `read_frame_robust_into_with_ticks(&mut [u8], now_ticks)` captures into a caller buffer and stamps metadata with your monotonic tick source.
 
 ## Shared SPI bus guidance (Lepton + other sensors)
 

@@ -1,5 +1,10 @@
 use crate::crc::lepton_packet_crc16_spec;
 
+const PACKET_HEADER_BYTES: usize = 4;
+const PACKET_DISCARD_MASK: u16 = 0xF000;
+const PACKET_NUMBER_MASK: u16 = 0x0FFF;
+const SEGMENT_BITS_MASK: u16 = 0x7;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SyncState {
     Unsynced,
@@ -9,7 +14,6 @@ pub enum SyncState {
 
 #[derive(Debug, Clone, Copy)]
 pub struct RobustCaptureConfig {
-    pub telemetry_enabled: bool,
     pub enable_crc: bool,
     pub max_resync_attempts: u32,
     pub max_frame_retries: u32,
@@ -24,7 +28,6 @@ pub struct RobustCaptureConfig {
 impl Default for RobustCaptureConfig {
     fn default() -> Self {
         Self {
-            telemetry_enabled: false,
             enable_crc: true,
             max_resync_attempts: 20,
             max_frame_retries: 4,
@@ -76,22 +79,22 @@ impl PacketHeader {
             return None;
         }
 
-        let segment = ((self.packet_id >> 12) & 0x7) as u8;
+        let segment = ((self.packet_id >> 12) & SEGMENT_BITS_MASK) as u8;
         Some(segment)
     }
 }
 
 pub fn parse_packet_header(packet: &[u8]) -> Option<PacketHeader> {
-    if packet.len() < 4 {
+    if packet.len() < PACKET_HEADER_BYTES {
         return None;
     }
 
     let packet_id = u16::from_be_bytes([packet[0], packet[1]]);
     Some(PacketHeader {
         packet_id,
-        packet_number: packet_id & 0x0FFF,
+        packet_number: packet_id & PACKET_NUMBER_MASK,
         crc: u16::from_be_bytes([packet[2], packet[3]]),
-        is_discard: (packet_id & 0xF000) == 0xF000,
+        is_discard: (packet_id & PACKET_DISCARD_MASK) == PACKET_DISCARD_MASK,
     })
 }
 
@@ -126,11 +129,11 @@ pub trait PacketSource {
 }
 
 pub fn required_frame_buffer_len(cfg: &RobustCaptureConfig) -> usize {
-    if cfg.packet_size_bytes < 4 {
+    if cfg.packet_size_bytes < PACKET_HEADER_BYTES {
         return 0;
     }
 
-    (cfg.packet_size_bytes - 4) * cfg.lines_per_segment * cfg.segments_per_frame
+    (cfg.packet_size_bytes - PACKET_HEADER_BYTES) * cfg.lines_per_segment * cfg.segments_per_frame
 }
 
 pub fn capture_frame_from_source<S, F>(
@@ -179,7 +182,7 @@ where
     S: PacketSource,
     F: FnMut() -> u64,
 {
-    if cfg.packet_size_bytes < 4 {
+    if cfg.packet_size_bytes < PACKET_HEADER_BYTES {
         return Err(CaptureError::InvalidPacket);
     }
 
@@ -277,11 +280,11 @@ fn read_one_frame<S>(
 where
     S: PacketSource,
 {
-    if cfg.packet_size_bytes < 4 {
+    if cfg.packet_size_bytes < PACKET_HEADER_BYTES {
         return Err(CaptureError::InvalidPacket);
     }
 
-    let payload_len = cfg.packet_size_bytes - 4;
+    let payload_len = cfg.packet_size_bytes - PACKET_HEADER_BYTES;
     let mut expected_segment = 1usize;
     let mut expected_packet_number = 0usize;
     let mut packets_seen = 0u32;
@@ -366,7 +369,8 @@ where
         let frame_line = (expected_segment - 1) * cfg.lines_per_segment + expected_packet_number;
         let dst_start = frame_line * payload_len;
         let dst_end = dst_start + payload_len;
-        frame[dst_start..dst_end].copy_from_slice(&packet_buf[4..cfg.packet_size_bytes]);
+        frame[dst_start..dst_end]
+            .copy_from_slice(&packet_buf[PACKET_HEADER_BYTES..cfg.packet_size_bytes]);
 
         expected_packet_number += 1;
         if expected_packet_number == cfg.lines_per_segment {
@@ -576,5 +580,36 @@ mod tests {
             err,
             CaptureError::SyncLost | CaptureError::RetryLimitExceeded
         ));
+    }
+
+    #[test]
+    fn default_config_matches_telemetry_disabled_frame_geometry() {
+        let cfg = RobustCaptureConfig::default();
+        assert_eq!(cfg.lines_per_segment, 60);
+        assert_eq!(cfg.segments_per_frame, 4);
+        assert_eq!(required_frame_buffer_len(&cfg), 160 * 60 * 4);
+    }
+
+    #[test]
+    fn capture_ticks_uses_supplied_tick_source() {
+        let packets = mk_frame();
+        let mut source = MockPacketSource { packets, idx: 0 };
+        let cfg = RobustCaptureConfig::default();
+        let mut synced = false;
+        let mut state = SyncState::Unsynced;
+        let mut diag = FrameDiagnostics::default();
+
+        let frame = capture_frame_from_source(
+            &mut source,
+            &cfg,
+            &mut synced,
+            &mut state,
+            &mut diag,
+            || 123,
+        )
+        .unwrap();
+
+        assert_eq!(frame.meta.capture_ticks, 123);
+        assert!(frame.meta.valid);
     }
 }

@@ -9,14 +9,14 @@ use crate::vospi::{
     FrameMeta, PacketSource, RobustCaptureConfig, SyncState,
 };
 
-const PACKETSIZE: usize = 164;
-const FRAMEPACKETS: usize = 60;
+const PACKET_SIZE_BYTES: usize = 164;
+const FRAME_PACKETS: usize = 60;
 
 /// Camera module
 pub struct Lepton<I2C, SPI, D> {
     cci: LEPTONCCI<I2C, D>,
     spi: SPI,
-    frame: Box<[u8; FRAMEPACKETS * PACKETSIZE]>,
+    frame: Box<[u8; FRAME_PACKETS * PACKET_SIZE_BYTES]>,
     robust_config: RobustCaptureConfig,
     diagnostics: FrameDiagnostics,
     sync_state: SyncState,
@@ -37,7 +37,7 @@ where
         Ok(Lepton {
             cci,
             spi,
-            frame: Box::new([0; FRAMEPACKETS * PACKETSIZE]),
+            frame: Box::new([0; FRAME_PACKETS * PACKET_SIZE_BYTES]),
             diagnostics: FrameDiagnostics::default(),
             sync_state: SyncState::Unsynced,
             first_valid_synced: false,
@@ -152,7 +152,7 @@ where
     ///
     /// This method is kept for backward compatibility and reads a 60-packet frame.
     pub fn read_frame(&mut self) -> Result<Vec<u8>, LeptonError<E1, SPI::Error>> {
-        let first_packet: [u8; PACKETSIZE];
+        let first_packet: [u8; PACKET_SIZE_BYTES];
 
         loop {
             if let Ok(packet) = self.check_packet() {
@@ -163,12 +163,12 @@ where
             }
         }
 
-        let mut frame = vec![0u8; FRAMEPACKETS * PACKETSIZE];
+        let mut frame = vec![0u8; FRAME_PACKETS * PACKET_SIZE_BYTES];
 
-        frame[..PACKETSIZE].copy_from_slice(&first_packet);
+        frame[..PACKET_SIZE_BYTES].copy_from_slice(&first_packet);
 
         self.spi
-            .read(&mut frame[PACKETSIZE..])
+            .read(&mut frame[PACKET_SIZE_BYTES..])
             .map_err(LeptonError::Spi)?;
 
         Ok(frame)
@@ -201,6 +201,18 @@ where
         &mut self,
         out: &mut [u8],
     ) -> Result<FrameMeta, LeptonError<E1, SPI::Error>> {
+        self.read_frame_robust_into_with_ticks(out, || 0)
+    }
+
+    /// Allocation-free robust capture into a caller-provided buffer with timestamp/tick source.
+    pub fn read_frame_robust_into_with_ticks<F>(
+        &mut self,
+        out: &mut [u8],
+        mut now_ticks: F,
+    ) -> Result<FrameMeta, LeptonError<E1, SPI::Error>>
+    where
+        F: FnMut() -> u64,
+    {
         struct SpiSource<'a, S>(&'a mut S);
 
         impl<S> PacketSource for SpiSource<'_, S>
@@ -228,7 +240,7 @@ where
             &mut self.diagnostics,
             out,
             &mut self.packet_buffer,
-            || 0,
+            || now_ticks(),
         )
         .map_err(LeptonError::from_capture)
     }
@@ -255,21 +267,21 @@ where
         lock(self)
     }
 
-    fn check_packet(&mut self) -> Result<[u8; PACKETSIZE], LeptonError<E1, SPI::Error>> {
-        let mut packet = [0_u8; PACKETSIZE];
+    fn check_packet(&mut self) -> Result<[u8; PACKET_SIZE_BYTES], LeptonError<E1, SPI::Error>> {
+        let mut packet = [0_u8; PACKET_SIZE_BYTES];
         self.spi.read(&mut packet).map_err(LeptonError::Spi)?;
 
         Ok(packet)
     }
 
     /// Returns a box containing the frame data as an array.
-    pub fn get_frame(&mut self) -> &Box<[u8; FRAMEPACKETS * PACKETSIZE]> {
+    pub fn get_frame(&mut self) -> &Box<[u8; FRAME_PACKETS * PACKET_SIZE_BYTES]> {
         &self.frame
     }
 
     /// Sets the frame field on the camera struct to data.
     pub fn set_frame(&mut self, data: &[u8]) -> Result<(), &'static str> {
-        if data.len() != FRAMEPACKETS * PACKETSIZE {
+        if data.len() != FRAME_PACKETS * PACKET_SIZE_BYTES {
             return Err("Data length does not match frame buffer size");
         }
         self.frame.copy_from_slice(data);
