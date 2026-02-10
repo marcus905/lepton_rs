@@ -31,7 +31,7 @@ pub struct RobustCaptureConfig {
 impl Default for RobustCaptureConfig {
     fn default() -> Self {
         Self {
-            enable_crc: true,
+            enable_crc: false,
             max_resync_attempts: 20,
             max_frame_retries: 4,
             packet_size_bytes: DEFAULT_PACKET_SIZE_BYTES,
@@ -352,8 +352,14 @@ where
                 .decode_segment_on_packet20()
                 .ok_or(CaptureError::InvalidPacket)?;
             if segment == 0 || segment as usize > cfg.segments_per_frame {
-                return Err(CaptureError::InvalidPacket);
+                if locked {
+                    return Err(CaptureError::InvalidPacket);
+                }
+                expected_segment = 1;
+                expected_packet_number = 0;
+                continue;
             }
+
 
             if segment as usize != expected_segment {
                 if locked {
