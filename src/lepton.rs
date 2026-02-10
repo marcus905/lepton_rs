@@ -1,7 +1,7 @@
 use core::fmt;
 
 use embedded_hal::{i2c::I2c, spi};
-
+use embedded_hal::spi::Operation;
 use crate::lepton_cci::LEPTONCCI;
 use crate::lepton_status::LepStatus;
 use crate::vospi::{
@@ -226,7 +226,7 @@ where
             type Error = S::Error;
 
             fn read_packet(&mut self, packet: &mut [u8]) -> Result<(), Self::Error> {
-                self.0.read(packet)
+                self.0.transaction(&mut [Operation::Read(packet)])
             }
         }
 

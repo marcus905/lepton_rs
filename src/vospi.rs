@@ -33,13 +33,13 @@ impl Default for RobustCaptureConfig {
         Self {
             enable_crc: false,
             max_resync_attempts: 20,
-            max_frame_retries: 4,
+            max_frame_retries: 10,
             packet_size_bytes: DEFAULT_PACKET_SIZE_BYTES,
             lines_per_segment: DEFAULT_LINES_PER_SEGMENT,
             segments_per_frame: DEFAULT_SEGMENTS_PER_FRAME,
-            max_discard_packets: 600,
-            timeout_packets: 3000,
-            backoff_packet_reads: 2,
+            max_discard_packets: 5000,
+            timeout_packets: 12000,
+            backoff_packet_reads: 20,
         }
     }
 }
