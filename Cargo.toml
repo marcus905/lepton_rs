@@ -7,3 +7,4 @@ description = "Device driver for the flir-Lepton camera module"
 
 [dependencies]
 embedded-hal = "1.0.0"
+log = "0.4.29"

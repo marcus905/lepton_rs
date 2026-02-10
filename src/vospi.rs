@@ -16,6 +16,53 @@ pub enum SyncState {
 }
 
 #[derive(Debug, Clone, Copy)]
+pub struct HeaderProbe {
+    pub b0: u8,
+    pub b1: u8,
+    pub id_be: u16,
+    pub id_le: u16,
+    pub packet_number_be: u16,
+    pub is_discard_be: bool,
+    pub is_discard_le: bool,
+    pub segment_on_20_be: Option<u8>,
+}
+
+#[inline]
+pub fn probe_header(packet: &[u8]) -> Option<HeaderProbe> {
+    if packet.len() < 4 {
+        return None;
+    }
+
+    let b0 = packet[0];
+    let b1 = packet[1];
+
+    let id_be = u16::from_be_bytes([b0, b1]);
+    let id_le = u16::from_le_bytes([b0, b1]);
+
+    let packet_number_be = id_be & 0x0FFF;
+    let is_discard_be = (id_be & 0x0F00) == 0x0F00; // xFxx
+    let is_discard_le = (id_le & 0x0F00) == 0x0F00;
+
+    let segment_on_20_be = if packet_number_be == 20 {
+        Some(((id_be >> 12) & 0x7) as u8)
+    } else {
+        None
+    };
+
+    Some(HeaderProbe {
+        b0,
+        b1,
+        id_be,
+        id_le,
+        packet_number_be,
+        is_discard_be,
+        is_discard_le,
+        segment_on_20_be,
+    })
+}
+
+
+#[derive(Debug, Clone, Copy)]
 pub struct RobustCaptureConfig {
     pub enable_crc: bool,
     pub max_resync_attempts: u32,
@@ -283,6 +330,7 @@ fn read_one_frame<S>(
 where
     S: PacketSource,
 {
+
     if cfg.packet_size_bytes < PACKET_HEADER_BYTES {
         return Err(CaptureError::InvalidPacket);
     }
@@ -298,6 +346,15 @@ where
             .read_packet(&mut packet_buf[..cfg.packet_size_bytes])
             .map_err(CaptureError::Spi)?;
         packets_seen += 1;
+        
+        if packets_seen % 64 == 1 {
+            if let Some(p) = probe_header(&packet_buf[..cfg.packet_size_bytes]) {
+                log::warn!(
+            "hdr: b0={:02X} b1={:02X} id_be={:04X} id_le={:04X} pn_be={} disc_be={} disc_le={} seg20_be={:?}",
+            p.b0, p.b1, p.id_be, p.id_le, p.packet_number_be, p.is_discard_be, p.is_discard_le, p.segment_on_20_be
+        );
+            }
+        }
 
         if packets_seen > cfg.timeout_packets {
             return Err(CaptureError::Timeout);
@@ -490,9 +547,9 @@ mod tests {
 
     #[test]
     fn discard_detection_accepts_xfxx_patterns() {
-        let p1 = mk_packet(0, 1, 0, Some(0xF001));
-        let p2 = mk_packet(0, 1, 0, Some(0xFAAA));
-        let p3 = mk_packet(0, 1, 0, Some(0x0AAA));
+        let p1 = mk_packet(0, 1, 0, Some(0x0F01)); // xFxx -> discard
+        let p2 = mk_packet(0, 1, 0, Some(0xAF55)); // xFxx -> discard
+        let p3 = mk_packet(0, 1, 0, Some(0xF055)); // Fxxx but not xFxx -> NOT discard
 
         assert!(is_discard_packet(&p1));
         assert!(is_discard_packet(&p2));
