@@ -1,16 +1,31 @@
 use core::fmt;
 
-use embedded_hal::{i2c::I2c, spi};
-use embedded_hal::spi::Operation;
-use crate::lepton_cci::LEPTONCCI;
+use crate::lepton_cci::{CciError, LEPTONCCI};
 use crate::lepton_status::LepStatus;
+use crate::oem::VideoOutputSource;
 use crate::vospi::{
     capture_frame_into, required_frame_buffer_len, CaptureError, CapturedFrame, FrameDiagnostics,
     FrameMeta, PacketSource, RobustCaptureConfig, SyncState,
 };
+use embedded_hal::spi::Operation;
+use embedded_hal::{i2c::I2c, spi};
 
 const PACKET_SIZE_BYTES: usize = 164;
 const FRAME_PACKETS: usize = 60;
+
+#[derive(Debug, Clone)]
+pub struct CameraCheckReport {
+    pub tests: Vec<CameraCheckTestResult>,
+    pub restored: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct CameraCheckTestResult {
+    pub name: String,
+    pub ok: bool,
+    pub details: String,
+    pub readback_source: Option<u16>,
+}
 
 /// Camera module
 pub struct Lepton<I2C, SPI, D> {
@@ -31,6 +46,13 @@ where
     D: embedded_hal::delay::DelayNs,
     E1: core::fmt::Debug,
 {
+    fn map_cci_error(err: CciError<E1>) -> LeptonError<E1, SPI::Error> {
+        match err {
+            CciError::I2c(e) => LeptonError::I2c(e),
+            CciError::Timeout => LeptonError::Timeout,
+        }
+    }
+
     pub fn new(i2c: I2C, spi: SPI, delay: D) -> Result<Self, E1> {
         let cci = LEPTONCCI::new(i2c, delay)?;
         let robust_config = RobustCaptureConfig::default();
@@ -52,23 +74,25 @@ where
     ) -> Result<LepStatus, LeptonError<E1, SPI::Error>> {
         self.cci
             .set_phase_delay(phase_delay)
-            .map_err(LeptonError::I2c)?;
-        self.cci.get_status_code().map_err(LeptonError::I2c)
+            .map_err(Self::map_cci_error)?;
+        self.cci.get_status_code().map_err(Self::map_cci_error)
     }
 
     pub fn get_phase_delay(&mut self) -> Result<(i16, LepStatus), LeptonError<E1, SPI::Error>> {
-        self.cci.get_phase_delay().map_err(LeptonError::I2c)
+        self.cci.get_phase_delay().map_err(Self::map_cci_error)
     }
 
     pub fn set_gpio_mode(
         &mut self,
         gpio_mode: u16,
     ) -> Result<LepStatus, LeptonError<E1, SPI::Error>> {
-        self.cci.set_gpio_mode(gpio_mode).map_err(LeptonError::I2c)
+        self.cci
+            .set_gpio_mode(gpio_mode)
+            .map_err(Self::map_cci_error)
     }
 
     pub fn get_gpio_mode(&mut self) -> Result<(u16, LepStatus), LeptonError<E1, SPI::Error>> {
-        self.cci.get_gpio_mode().map_err(LeptonError::I2c)
+        self.cci.get_gpio_mode().map_err(Self::map_cci_error)
     }
 
     pub fn set_video_output_format(
@@ -77,14 +101,14 @@ where
     ) -> Result<LepStatus, LeptonError<E1, SPI::Error>> {
         self.cci
             .set_oem_video_output_format(format)
-            .map_err(LeptonError::I2c)
+            .map_err(Self::map_cci_error)
     }
     pub fn get_video_output_format(
         &mut self,
     ) -> Result<(u16, LepStatus), LeptonError<E1, SPI::Error>> {
         self.cci
             .get_oem_video_output_format()
-            .map_err(LeptonError::I2c)
+            .map_err(Self::map_cci_error)
     }
 
     pub fn set_video_output_source(
@@ -93,7 +117,7 @@ where
     ) -> Result<LepStatus, LeptonError<E1, SPI::Error>> {
         self.cci
             .set_oem_video_output_source(source)
-            .map_err(LeptonError::I2c)
+            .map_err(Self::map_cci_error)
     }
 
     pub fn get_video_output_source(
@@ -101,7 +125,7 @@ where
     ) -> Result<(u16, LepStatus), LeptonError<E1, SPI::Error>> {
         self.cci
             .get_oem_video_output_source()
-            .map_err(LeptonError::I2c)
+            .map_err(Self::map_cci_error)
     }
 
     pub fn set_video_output_constant(
@@ -110,7 +134,7 @@ where
     ) -> Result<LepStatus, LeptonError<E1, SPI::Error>> {
         self.cci
             .set_oem_video_output_constant(constant)
-            .map_err(LeptonError::I2c)
+            .map_err(Self::map_cci_error)
     }
 
     pub fn get_video_output_constant(
@@ -118,34 +142,180 @@ where
     ) -> Result<(u16, LepStatus), LeptonError<E1, SPI::Error>> {
         self.cci
             .get_oem_video_output_constant()
-            .map_err(LeptonError::I2c)
+            .map_err(Self::map_cci_error)
     }
 
     pub fn get_boot_status(&mut self) -> Result<bool, LeptonError<E1, SPI::Error>> {
-        self.cci.get_boot_status().map_err(LeptonError::I2c)
+        self.cci.get_boot_status().map_err(Self::map_cci_error)
     }
 
     pub fn get_interface_status(&mut self) -> Result<bool, LeptonError<E1, SPI::Error>> {
-        self.cci.get_interface_status().map_err(LeptonError::I2c)
+        self.cci.get_interface_status().map_err(Self::map_cci_error)
     }
 
     pub fn set_telemetry_mode(
         &mut self,
         mode: u16,
     ) -> Result<LepStatus, LeptonError<E1, SPI::Error>> {
-        self.cci.set_telemetry_mode(mode).map_err(LeptonError::I2c)
+        self.cci
+            .set_telemetry_mode(mode)
+            .map_err(Self::map_cci_error)
     }
 
     pub fn get_telemetry_mode(&mut self) -> Result<(u16, LepStatus), LeptonError<E1, SPI::Error>> {
-        self.cci.get_telemetry_mode().map_err(LeptonError::I2c)
+        self.cci.get_telemetry_mode().map_err(Self::map_cci_error)
     }
 
     pub fn get_agc_enable(&mut self) -> Result<(u16, LepStatus), LeptonError<E1, SPI::Error>> {
-        self.cci.get_agc_enable().map_err(LeptonError::I2c)
+        self.cci.get_agc_enable().map_err(Self::map_cci_error)
     }
 
     pub fn set_agc_enable(&mut self, mode: u16) -> Result<LepStatus, LeptonError<E1, SPI::Error>> {
-        self.cci.set_agc_enable(mode).map_err(LeptonError::I2c)
+        self.cci.set_agc_enable(mode).map_err(Self::map_cci_error)
+    }
+
+    /// Runs an end-to-end camera health check by programming deterministic OEM
+    /// video output source patterns and validating one robust VoSPI frame for each.
+    ///
+    /// This uses the OEM module concepts from Lepton Software IDD Rev 303:
+    /// source select (`0x0800:0x2C/0x2D`) and source constant value (`0x0800:0x3C/0x3D`).
+    /// The report is non-panicking and includes likely failure causes for CCI,
+    /// VoSPI framing/timing, and payload byte-order interpretation.
+    pub fn check_camera(&mut self) -> CameraCheckReport {
+        let mut report = CameraCheckReport {
+            tests: Vec::new(),
+            restored: true,
+        };
+
+        let original_source = self.get_video_output_source().ok().map(|(value, _)| value);
+        let original_constant = self
+            .get_video_output_constant()
+            .ok()
+            .map(|(value, _)| value);
+
+        let tests = [
+            (
+                "constant_0x1234",
+                VideoOutputSource::Constant,
+                Some(0x1234u16),
+            ),
+            (
+                "constant_0x2AAA",
+                VideoOutputSource::Constant,
+                Some(0x2AAAu16),
+            ),
+            ("ramp_h", VideoOutputSource::RampH, None),
+            ("ramp_v", VideoOutputSource::RampV, None),
+            ("ramp", VideoOutputSource::Ramp, None),
+        ];
+
+        for (name, source, constant) in tests {
+            report
+                .tests
+                .push(self.run_camera_check_test(name, source, constant));
+        }
+
+        if let Some(constant) = original_constant {
+            if self.set_video_output_constant(constant).is_err() {
+                report.restored = false;
+            }
+        } else {
+            report.restored = false;
+        }
+
+        if let Some(source) = original_source {
+            if self.set_video_output_source(source).is_err() {
+                report.restored = false;
+            }
+        } else {
+            report.restored = false;
+        }
+
+        report
+    }
+
+    fn run_camera_check_test(
+        &mut self,
+        name: &str,
+        source: VideoOutputSource,
+        constant: Option<u16>,
+    ) -> CameraCheckTestResult {
+        if let Some(value) = constant {
+            if let Err(err) = self.set_video_output_constant(value) {
+                return CameraCheckTestResult {
+                    name: name.to_string(),
+                    ok: false,
+                    details: format!("failed setting constant value via CCI: {}", err),
+                    readback_source: None,
+                };
+            }
+        }
+
+        if let Err(err) = self.set_video_output_source(source as u16) {
+            return CameraCheckTestResult {
+                name: name.to_string(),
+                ok: false,
+                details: format!("failed setting output source via CCI: {}", err),
+                readback_source: None,
+            };
+        }
+
+        let readback_source = match self.get_video_output_source() {
+            Ok((value, _)) => value,
+            Err(err) => {
+                return CameraCheckTestResult {
+                    name: name.to_string(),
+                    ok: false,
+                    details: format!("failed reading output source readback via CCI: {}", err),
+                    readback_source: None,
+                }
+            }
+        };
+
+        if readback_source != source as u16 {
+            return CameraCheckTestResult {
+                name: name.to_string(),
+                ok: false,
+                details: "CCI set didn't stick / I2C or busy state".to_string(),
+                readback_source: Some(readback_source),
+            };
+        }
+
+        for _ in 0..2 {
+            let _ = self.read_frame_robust();
+        }
+
+        let frame =
+            match self.read_frame_robust() {
+                Ok(frame) => frame,
+                Err(_) => return CameraCheckTestResult {
+                    name: name.to_string(),
+                    ok: false,
+                    details:
+                        "CCI ok, but robust capture failed: likely SPI framing/timing/clock mode"
+                            .to_string(),
+                    readback_source: Some(readback_source),
+                },
+            };
+
+        let payload_bytes_per_packet = self.robust_config.packet_size_bytes.saturating_sub(4);
+        let cols = payload_bytes_per_packet / 2;
+        let rows = self.robust_config.lines_per_segment * self.robust_config.segments_per_frame;
+
+        let (ok, mut details) = validate_pattern(&frame.pixels, source, cols, rows);
+        if !ok {
+            let (swapped_ok, _) = validate_pattern_swapped(&frame.pixels, source, cols, rows);
+            if swapped_ok {
+                details.push_str("; likely endianness/word-order issue");
+            }
+        }
+
+        CameraCheckTestResult {
+            name: name.to_string(),
+            ok,
+            details,
+            readback_source: Some(readback_source),
+        }
     }
 
     /// Returns a u8 vec containing the frame data.
@@ -290,6 +460,188 @@ where
         }
         self.frame.copy_from_slice(data);
         Ok(())
+    }
+}
+
+fn pixel_at(frame: &[u8], cols: usize, row: usize, col: usize, swapped: bool) -> u16 {
+    let byte_index = (row * cols + col) * 2;
+    let raw = if swapped {
+        u16::from_le_bytes([frame[byte_index], frame[byte_index + 1]])
+    } else {
+        u16::from_be_bytes([frame[byte_index], frame[byte_index + 1]])
+    };
+    raw & 0x3FFF
+}
+
+fn validate_constant(frame: &[u8], swapped: bool, cols: usize, rows: usize) -> (bool, String) {
+    let expected_bytes = rows.saturating_mul(cols).saturating_mul(2);
+    if cols == 0 || rows == 0 {
+        return (
+            false,
+            format!("invalid geometry rows={} cols={}", rows, cols),
+        );
+    }
+    if frame.len() < expected_bytes {
+        return (
+            false,
+            format!(
+                "payload too small for geometry: got {} bytes, need at least {}",
+                frame.len(),
+                expected_bytes
+            ),
+        );
+    }
+
+    let mut min_value = u16::MAX;
+    let mut max_value = u16::MIN;
+
+    for chunk in frame[..expected_bytes].chunks_exact(2) {
+        let value = if swapped {
+            u16::from_le_bytes([chunk[0], chunk[1]])
+        } else {
+            u16::from_be_bytes([chunk[0], chunk[1]])
+        } & 0x3FFF;
+        min_value = min_value.min(value);
+        max_value = max_value.max(value);
+    }
+
+    let spread = max_value.saturating_sub(min_value);
+    (
+        spread <= 2,
+        format!(
+            "constant spread={} (min={}, max={})",
+            spread, min_value, max_value
+        ),
+    )
+}
+
+fn validate_ramp_h(frame: &[u8], swapped: bool, cols: usize, rows: usize) -> (bool, String) {
+    let expected_bytes = rows.saturating_mul(cols).saturating_mul(2);
+    if cols == 0 || rows == 0 {
+        return (
+            false,
+            format!("invalid geometry rows={} cols={}", rows, cols),
+        );
+    }
+    if frame.len() < expected_bytes {
+        return (
+            false,
+            format!(
+                "payload too small for geometry: got {} bytes, need at least {}",
+                frame.len(),
+                expected_bytes
+            ),
+        );
+    }
+
+    let sample_rows = rows.min(24);
+    let mut pass = 0usize;
+    for i in 0..sample_rows {
+        let row = i * rows / sample_rows;
+        let first = pixel_at(frame, cols, row, 0, swapped);
+        let last = pixel_at(frame, cols, row, cols - 1, swapped);
+        if last > first {
+            pass += 1;
+        }
+    }
+
+    let ratio = if sample_rows == 0 {
+        0.0
+    } else {
+        pass as f32 / sample_rows as f32
+    };
+    (
+        ratio >= 0.8,
+        format!(
+            "ramp_h rows passing={}/{} ({:.1}%)",
+            pass,
+            sample_rows,
+            ratio * 100.0
+        ),
+    )
+}
+
+fn validate_ramp_v(frame: &[u8], swapped: bool, cols: usize, rows: usize) -> (bool, String) {
+    let expected_bytes = rows.saturating_mul(cols).saturating_mul(2);
+    if cols == 0 || rows == 0 {
+        return (
+            false,
+            format!("invalid geometry rows={} cols={}", rows, cols),
+        );
+    }
+    if frame.len() < expected_bytes {
+        return (
+            false,
+            format!(
+                "payload too small for geometry: got {} bytes, need at least {}",
+                frame.len(),
+                expected_bytes
+            ),
+        );
+    }
+
+    let sample_cols = cols.min(24);
+    let mut pass = 0usize;
+    for i in 0..sample_cols {
+        let col = i * cols / sample_cols;
+        let top = pixel_at(frame, cols, 0, col, swapped);
+        let bottom = pixel_at(frame, cols, rows - 1, col, swapped);
+        if bottom > top {
+            pass += 1;
+        }
+    }
+
+    let ratio = if sample_cols == 0 {
+        0.0
+    } else {
+        pass as f32 / sample_cols as f32
+    };
+    (
+        ratio >= 0.8,
+        format!(
+            "ramp_v cols passing={}/{} ({:.1}%)",
+            pass,
+            sample_cols,
+            ratio * 100.0
+        ),
+    )
+}
+
+fn validate_pattern(
+    frame: &[u8],
+    source: VideoOutputSource,
+    cols: usize,
+    rows: usize,
+) -> (bool, String) {
+    match source {
+        VideoOutputSource::Constant => validate_constant(frame, false, cols, rows),
+        VideoOutputSource::RampH => validate_ramp_h(frame, false, cols, rows),
+        VideoOutputSource::RampV => validate_ramp_v(frame, false, cols, rows),
+        VideoOutputSource::Ramp => {
+            let (h_ok, h_details) = validate_ramp_h(frame, false, cols, rows);
+            let (v_ok, v_details) = validate_ramp_v(frame, false, cols, rows);
+            (h_ok && v_ok, format!("{}, {}", h_details, v_details))
+        }
+        _ => (false, "unsupported pattern in check".to_string()),
+    }
+}
+
+fn validate_pattern_swapped(
+    frame: &[u8],
+    source: VideoOutputSource,
+    cols: usize,
+    rows: usize,
+) -> (bool, String) {
+    match source {
+        VideoOutputSource::Constant => validate_constant(frame, true, cols, rows),
+        VideoOutputSource::RampH => validate_ramp_h(frame, true, cols, rows),
+        VideoOutputSource::RampV => validate_ramp_v(frame, true, cols, rows),
+        VideoOutputSource::Ramp => {
+            let (h_ok, h_details) = validate_ramp_h(frame, true, cols, rows);
+            let (v_ok, v_details) = validate_ramp_v(frame, true, cols, rows);
+            (h_ok && v_ok, format!("{}, {}", h_details, v_details))
+        }
+        _ => (false, "unsupported pattern in check".to_string()),
     }
 }
 

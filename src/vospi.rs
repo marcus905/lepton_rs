@@ -636,12 +636,13 @@ mod tests {
 
     #[test]
     fn retries_and_resync_are_bounded() {
-        let packets = vec![mk_packet(0, 1, 0, Some(0xF123)); 50];
+        let packets = vec![mk_packet(0, 1, 0, Some(0xF123)); 200];
         let mut source = MockPacketSource { packets, idx: 0 };
         let mut cfg = RobustCaptureConfig::default();
         cfg.max_frame_retries = 2;
         cfg.max_resync_attempts = 1;
         cfg.max_discard_packets = 1;
+        cfg.timeout_packets = 16;
 
         let err = run_capture(&mut source, &cfg).unwrap_err();
         assert!(matches!(

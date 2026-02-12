@@ -1,7 +1,6 @@
 use crate::lepton_command::LepCommand;
 use crate::lepton_status::LepStatus;
 use embedded_hal::i2c::I2c;
-use crate::lepton::LeptonError::Timeout;
 
 const CCI_STATUS_INTERFACE_BUSY_BIT: u16 = 1 << 0;
 const CCI_STATUS_BOOTED_BIT: u16 = 1 << 2;
@@ -11,7 +10,7 @@ macro_rules! generate_get_set_functions {
     (
         $set_fn_name:ident, $get_fn_name:ident, $param_ty:ty, $set_command:expr, $get_command:expr
     ) => {
-        pub fn $set_fn_name(&mut self, value: $param_ty) -> Result<LepStatus, E> {
+        pub fn $set_fn_name(&mut self, value: $param_ty) -> Result<LepStatus, CciError<E>> {
             self.write_register(Register::CCIDataReg0, &value.to_be_bytes())?;
             let command = $set_command;
             self.write_command(command)?;
@@ -19,7 +18,7 @@ macro_rules! generate_get_set_functions {
             self.get_status_code()
         }
 
-        pub fn $get_fn_name(&mut self) -> Result<($param_ty, LepStatus), E> {
+        pub fn $get_fn_name(&mut self) -> Result<($param_ty, LepStatus), CciError<E>> {
             let command = $get_command;
             self.write_command(command)?;
             self.poll_status()?;
@@ -28,6 +27,18 @@ macro_rules! generate_get_set_functions {
             Ok((data as $param_ty, status_code))
         }
     };
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum CciError<E> {
+    I2c(E),
+    Timeout,
+}
+
+impl<E> From<E> for CciError<E> {
+    fn from(value: E) -> Self {
+        CciError::I2c(value)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -51,19 +62,19 @@ where
         })
     }
 
-    pub fn get_boot_status(&mut self) -> Result<bool, E> {
+    pub fn get_boot_status(&mut self) -> Result<bool, CciError<E>> {
         let response = self.read_register(Register::CCIStatus)?;
         // Camera has booted when CCI status bit 2 is set.
         Ok((response & CCI_STATUS_BOOTED_BIT) != 0)
     }
 
-    pub fn get_interface_status(&mut self) -> Result<bool, E> {
+    pub fn get_interface_status(&mut self) -> Result<bool, CciError<E>> {
         let response = self.read_register(Register::CCIStatus)?;
         // CCI status bit 0 is interface busy (1 = busy, 0 = command finished).
         Ok((response & CCI_STATUS_INTERFACE_BUSY_BIT) == 0)
     }
 
-    pub fn get_status_code(&mut self) -> Result<LepStatus, E> {
+    pub fn get_status_code(&mut self) -> Result<LepStatus, CciError<E>> {
         let response = self.read_register(Register::CCIStatus)?;
         let status = (response >> 8) as u8;
         Ok(LepStatus::from(status as i8))
@@ -135,18 +146,19 @@ where
 
     /// Writes into a register
     #[allow(unused)]
-    fn write_register(&mut self, register: Register, payload: &[u8]) -> Result<(), E> {
+    fn write_register(&mut self, register: Register, payload: &[u8]) -> Result<(), CciError<E>> {
         // Value that will be written as u8
         let mut write_vec = std::vec::Vec::with_capacity(2 + payload.len());
         let address = register.address().to_be_bytes();
         write_vec.extend_from_slice(&address);
         write_vec.extend_from_slice(payload);
         // i2c write
-        self.i2c.write(self.address as u8, &write_vec)
+        self.i2c.write(self.address as u8, &write_vec)?;
+        Ok(())
     }
 
     //Write a command
-    fn write_command(&mut self, command: LepCommand) -> Result<(), E> {
+    fn write_command(&mut self, command: LepCommand) -> Result<(), CciError<E>> {
         let command_id = command.get_command_id();
         let data_length = command.get_data_length();
         self.write_register(Register::CCIDataLength, &data_length)?;
@@ -154,7 +166,7 @@ where
     }
 
     /// Reads a register using a `write_read` method.
-    fn read_register(&mut self, register: Register) -> Result<u16, E> {
+    fn read_register(&mut self, register: Register) -> Result<u16, CciError<E>> {
         // Buffer for values
         let mut data: [u8; 2] = [0; 2];
         // i2c write_read
@@ -166,7 +178,7 @@ where
         Ok(u16::from_be_bytes(data))
     }
 
-    fn poll_status(&mut self) -> Result<(), E> {
+    fn poll_status(&mut self) -> Result<(), CciError<E>> {
         for _ in 0..COMMAND_POLL_TIMEOUT_MS {
             let command_finished = self.get_interface_status()?;
             if command_finished {
@@ -176,8 +188,7 @@ where
             self.delay.delay_ms(1);
         }
 
-        // FIXME: return a proper error instead of panicking
-        panic!("Timeout waiting for command to finish")
+        Err(CciError::Timeout)
     }
 }
 
