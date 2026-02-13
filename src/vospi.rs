@@ -347,14 +347,14 @@ where
             .map_err(CaptureError::Spi)?;
         packets_seen += 1;
         
-        if packets_seen % 64 == 1 {
-            if let Some(p) = probe_header(&packet_buf[..cfg.packet_size_bytes]) {
-                log::warn!(
-            "hdr: b0={:02X} b1={:02X} id_be={:04X} id_le={:04X} pn_be={} disc_be={} disc_le={} seg20_be={:?}",
-            p.b0, p.b1, p.id_be, p.id_le, p.packet_number_be, p.is_discard_be, p.is_discard_le, p.segment_on_20_be
-        );
-            }
-        }
+        // if packets_seen % 64 == 1 {
+        //     if let Some(p) = probe_header(&packet_buf[..cfg.packet_size_bytes]) {
+        //         log::warn!(
+        //     "hdr: b0={:02X} b1={:02X} id_be={:04X} id_le={:04X} pn_be={} disc_be={} disc_le={} seg20_be={:?}",
+        //     p.b0, p.b1, p.id_be, p.id_le, p.packet_number_be, p.is_discard_be, p.is_discard_le, p.segment_on_20_be
+        // );
+        //     }
+        // }
 
         if packets_seen > cfg.timeout_packets {
             return Err(CaptureError::Timeout);
