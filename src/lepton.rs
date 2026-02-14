@@ -8,7 +8,7 @@ use crate::vospi::{
     FrameMeta, PacketSource, RobustCaptureConfig, SyncState,
 };
 use embedded_hal::spi::Operation;
-use embedded_hal::{i2c::I2c, spi};
+use embedded_hal::{delay::DelayNs, i2c::I2c, spi};
 
 const PACKET_SIZE_BYTES: usize = 164;
 const FRAME_PACKETS: usize = 60;
@@ -387,16 +387,38 @@ where
     where
         F: FnMut() -> u64,
     {
-        struct SpiSource<'a, S>(&'a mut S);
+        struct SpiSource<'a, S, D> {
+            spi: &'a mut S,
+            delay: &'a mut D,
+            inter_packet_delay_us: u32,
+            inter_packet_delay_discard_us: u32,
+        }
 
-        impl<S> PacketSource for SpiSource<'_, S>
+        impl<S, D> PacketSource for SpiSource<'_, S, D>
         where
             S: spi::SpiDevice,
+            D: DelayNs,
         {
             type Error = S::Error;
 
             fn read_packet(&mut self, packet: &mut [u8]) -> Result<(), Self::Error> {
-                self.0.transaction(&mut [Operation::Read(packet)])
+                self.spi.transaction(&mut [Operation::Read(packet)])?;
+
+                // Apply inter-packet timing at the packet source boundary so every read path in
+                // robust capture (normal, discard/backoff, and resync) gets identical behavior.
+                let delay_us = if self.inter_packet_delay_discard_us > 0
+                    && crate::vospi::is_discard_packet(packet)
+                {
+                    self.inter_packet_delay_discard_us
+                } else {
+                    self.inter_packet_delay_us
+                };
+
+                if delay_us > 0 {
+                    self.delay.delay_us(delay_us);
+                }
+
+                Ok(())
             }
         }
 
@@ -405,7 +427,13 @@ where
             return Err(LeptonError::InvalidPacket);
         }
 
-        let mut source = SpiSource(&mut self.spi);
+        let mut source = SpiSource {
+            spi: &mut self.spi,
+            delay: self.cci.delay_mut(),
+            inter_packet_delay_us: self.robust_config.inter_packet_delay_us,
+            inter_packet_delay_discard_us: self.robust_config.inter_packet_delay_discard_us,
+        };
+
         capture_frame_into(
             &mut source,
             &self.robust_config,

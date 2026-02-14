@@ -54,6 +54,10 @@ where
     E: core::fmt::Debug,
     D: embedded_hal::delay::DelayNs,
 {
+    pub(crate) fn delay_mut(&mut self) -> &mut D {
+        &mut self.delay
+    }
+
     pub fn new(i2c: I2C, delay: D) -> Result<Self, E> {
         Ok(LEPTONCCI {
             i2c,

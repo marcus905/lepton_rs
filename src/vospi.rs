@@ -61,7 +61,6 @@ pub fn probe_header(packet: &[u8]) -> Option<HeaderProbe> {
     })
 }
 
-
 #[derive(Debug, Clone, Copy)]
 pub struct RobustCaptureConfig {
     pub enable_crc: bool,
@@ -73,6 +72,13 @@ pub struct RobustCaptureConfig {
     pub max_discard_packets: u32,
     pub timeout_packets: u32,
     pub backoff_packet_reads: u32,
+    /// Delay inserted after each packet read by the concrete `PacketSource` implementation.
+    ///
+    /// Keeping delay policy in `PacketSource::read_packet` ensures all robust-capture read paths
+    /// (normal packets, discard/backoff reads, and resync reads) behave consistently.
+    pub inter_packet_delay_us: u32,
+    /// Optional alternate delay for discard packets.
+    pub inter_packet_delay_discard_us: u32,
 }
 
 impl Default for RobustCaptureConfig {
@@ -87,6 +93,8 @@ impl Default for RobustCaptureConfig {
             max_discard_packets: 600,
             timeout_packets: 3000,
             backoff_packet_reads: 2,
+            inter_packet_delay_us: 0,
+            inter_packet_delay_discard_us: 0,
         }
     }
 }
@@ -330,7 +338,6 @@ fn read_one_frame<S>(
 where
     S: PacketSource,
 {
-
     if cfg.packet_size_bytes < PACKET_HEADER_BYTES {
         return Err(CaptureError::InvalidPacket);
     }
@@ -349,13 +356,12 @@ where
         // every 64 packets, log a 10 line header probe sample for diagnostics, up to 300 packets (10 samples)
         if packets_seen <= 1000 {
             if let Some(p) = probe_header(&packet_buf[..cfg.packet_size_bytes]) {
-                if !p.is_discard_be{
+                if !p.is_discard_be {
                     log::warn!(
             "hdr: b0={:02X} b1={:02X} id_be={:04X} id_le={:04X} pn_be={} disc_be={} disc_le={} seg20_be={:?}",
             p.b0, p.b1, p.id_be, p.id_le, p.packet_number_be, p.is_discard_be, p.is_discard_le, p.segment_on_20_be
         );
                 }
-
             }
         }
 
@@ -372,8 +378,6 @@ where
             if meta.discard_packets > cfg.max_discard_packets {
                 return Err(CaptureError::DiscardPacketFlood);
             }
-            // On ESP32: you can spin-read a few dummy packets OR sleep/yield if you have delay access.
-            // Minimal portable: just skip a couple packet reads:
             for _ in 0..cfg.backoff_packet_reads {
                 source
                     .read_packet(&mut packet_buf[..cfg.packet_size_bytes])
@@ -427,7 +431,6 @@ where
                 expected_packet_number = 0;
                 continue;
             }
-
 
             if segment as usize != expected_segment {
                 if locked {
@@ -528,7 +531,7 @@ mod tests {
 
     fn mk_frame() -> Vec<Vec<u8>> {
         let mut packets = Vec::new();
-        for segment in 1..=(DEFAULT_SEGMENTS_PER_FRAME as u8){
+        for segment in 1..=(DEFAULT_SEGMENTS_PER_FRAME as u8) {
             for packet_number in 0..(DEFAULT_LINES_PER_SEGMENT as u16) {
                 packets.push(mk_packet(packet_number, segment, (segment * 9) as u8, None));
             }
@@ -554,6 +557,13 @@ mod tests {
         let mut state = SyncState::Locked;
         let mut diag = FrameDiagnostics::default();
         capture_frame_from_source(source, cfg, &mut synced, &mut state, &mut diag, || 1)
+    }
+
+    #[test]
+    fn robust_config_defaults_inter_packet_delays_to_zero() {
+        let cfg = RobustCaptureConfig::default();
+        assert_eq!(cfg.inter_packet_delay_us, 0);
+        assert_eq!(cfg.inter_packet_delay_discard_us, 0);
     }
 
     #[test]
